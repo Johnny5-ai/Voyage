@@ -46,10 +46,12 @@ class FormatInconnu(Exception):
 
 @dataclass(frozen=True)
 class Combo:
+    """Aller-retour, ou aller simple si `retour` est None."""
+
     origine: str
     destination: str
     depart: date
-    retour: date
+    retour: date | None = None
 
     @property
     def nuits(self) -> int:
@@ -78,13 +80,25 @@ def combinaisons(origines, destinations, debut, fin, nuits_min, nuits_max) -> li
     return combos
 
 
+def allers_simples(origines, destinations, debut, fin, nuits_min, nuits_max) -> list[Combo]:
+    """Allers simples couvrant les mêmes dates que `combinaisons` : vers la destination, puis retour."""
+    simples = set()
+    for o in origines:
+        for dest in destinations:
+            for i in range((fin - debut).days + 1):
+                simples.add(Combo(o, dest, debut + timedelta(days=i)))
+            for i in range((fin - debut).days + nuits_max - nuits_min + 1):
+                simples.add(Combo(dest, o, debut + timedelta(days=nuits_min + i)))
+    return sorted(simples, key=lambda c: (c.origine, c.destination, c.depart))
+
+
 def requete(c: Combo, cr: Criteres):
+    trajets = [FlightQuery(date=c.depart.isoformat(), from_airport=c.origine, to_airport=c.destination)]
+    if c.retour:
+        trajets.append(FlightQuery(date=c.retour.isoformat(), from_airport=c.destination, to_airport=c.origine))
     return create_query(
-        flights=[
-            FlightQuery(date=c.depart.isoformat(), from_airport=c.origine, to_airport=c.destination),
-            FlightQuery(date=c.retour.isoformat(), from_airport=c.destination, to_airport=c.origine),
-        ],
-        trip="round-trip",
+        flights=trajets,
+        trip="round-trip" if c.retour else "one-way",
         seat=cr.classe,
         passengers=Passengers(adults=cr.adultes, children=cr.enfants),
         max_stops=cr.escales_max,
@@ -134,6 +148,17 @@ def _segment(s) -> list | None:
     return [s[3], "{:04d}-{:02d}-{:02d}".format(*s[20]), s[6], s[22][0], s[22][1]]
 
 
+def _tendance(bloc) -> dict:
+    """Encart « Tendances des prix » : prix habituel et fourchette habituelle de Google pour ces dates.
+
+    Bloc observé : [niveau 1-5, [_, prix actuel], [_, prix habituel], [_, écart], [_, bas], [_, haut], ...].
+    """
+    try:
+        return {"typique": bloc[2][1], "typique_bas": bloc[4][1], "typique_haut": bloc[5][1]}
+    except (IndexError, TypeError):
+        return {"typique": None, "typique_bas": None, "typique_haut": None}
+
+
 def analyser(html: str) -> list[dict]:
     script = LexborHTMLParser(html).css_first(r"script.ds\:1")
     if script is None:
@@ -143,6 +168,7 @@ def analyser(html: str) -> list[dict]:
         if data.endswith("errorHasStatus: true"):
             return []
         payload = json.loads(data)
+        tendance = _tendance(payload[5])
 
         options = []
         for bloc in (payload[2], payload[3]):
@@ -166,6 +192,7 @@ def analyser(html: str) -> list[dict]:
                     "escale_max_min": max((e[0] for e in vol[13] or []), default=0),
                     "vols": " + ".join(f"{i[3]}{i[4]}" if i else "?" for i in ids),
                     "segments": ids if all(ids) else None,
+                    **tendance,
                 }
                 if not all(isinstance(option[k], int) for k in ("prix", "duree_min", "escale_max_min")):
                     raise TypeError("prix ou durée non numérique")
@@ -218,6 +245,9 @@ def chercher(c: Combo, cr: Criteres, sans_cache: bool = False, aller=()) -> list
     lien = f"{URL}/search?tfs={t}&hl=fr&curr={cr.devise}"
     for o in options:
         o["lien"] = lien
+        # Aller simple : lien direct vers la page de réservation du vol
+        if not c.retour and o["segments"]:
+            o["lien"] = f"{URL_RESERVATION}?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
     _cache[t] = (time.time(), options)
     return options
 
@@ -227,12 +257,15 @@ def chercher_avec_bagages(c: Combo, cr: Criteres, sans_cache: bool = False) -> l
     options = chercher(c, cr, sans_cache)
     if not cr.bagages_soute:
         return [{**o, "bagages": 0} for o in options]
-    base = {o["vols"]: o["prix"] for o in chercher(c, replace(cr, bagages_soute=0), sans_cache)}
+    sans_bagage = chercher(c, replace(cr, bagages_soute=0), sans_cache)
+    base = {o["vols"]: o["prix"] for o in sans_bagage}
     frais = [o["prix"] - base[o["vols"]] if o["vols"] in base else None for o in options]
     # Sur certaines routes (ex. Amérique latine), Google n'applique pas les frais : tous les écarts sont nuls
     if not any(frais):
         frais = [None] * len(options)
-    return [{**o, "bagages": f} for o, f in zip(options, frais)]
+    # Le prix habituel se compare au prix hors bagages : on garde celui de la recherche sans bagage
+    tendance = {k: sans_bagage[0][k] for k in ("typique", "typique_bas", "typique_haut")} if sans_bagage else {}
+    return [{**o, **tendance, "bagages": f} for o, f in zip(options, frais)]
 
 
 def chercher_retours(c: Combo, cr: Criteres, aller: dict, sans_cache: bool = False) -> list[dict]:

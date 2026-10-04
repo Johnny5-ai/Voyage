@@ -7,3 +7,4 @@ __pycache__/
 **/data/recherches.json
 **/data/*.corrompu-*.json
 **/data/historique.sqlite
+**/data/chasse.log

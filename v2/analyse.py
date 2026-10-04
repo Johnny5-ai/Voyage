@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from vols import CHAMPS_VOL
+
 # Colonnes selon le tableau : vols aller seuls (étape 1) ou itinéraires complets (étape 2)
 ALLERS = {"compagnies": ["compagnies"], "escales": ["escales"], "duree": ["duree_min"], "escale_max": ["escale_max_min"]}
 ITINERAIRES = {
@@ -58,6 +60,56 @@ def ajouter_scores(df: pd.DataFrame, cols: dict, penalite_escale: float, valeur_
 
 def filtrer_escale(df: pd.DataFrame, escale_max_min: int | None) -> pd.DataFrame:
     return df if escale_max_min is None else df[df["escale_max"] <= escale_max_min]
+
+
+def combiner_simples(simples: pd.DataFrame, combos, penalite_escale: float, valeur_heure: float,
+                     escale_max_min: int | None) -> pd.DataFrame:
+    """Itinéraires faits de deux allers simples, aux mêmes dates que les allers-retours demandés.
+
+    Pour chaque jour et chaque sens, on garde le vol le moins cher et le meilleur compromis,
+    puis on les apparie pour chaque combinaison de dates.
+    """
+    if simples.empty:
+        return pd.DataFrame()
+    notes = filtrer_escale(ajouter_scores(simples, ALLERS, penalite_escale, valeur_heure), escale_max_min)
+    meilleurs = {}
+    for cle, g in notes.groupby(["origine", "destination", "depart"]):
+        meilleurs[cle] = g.loc[[g["prix"].idxmin(), g["compromis"].idxmin()]].drop_duplicates("vols")
+
+    lignes = []
+    for c in combos:
+        allers = meilleurs.get((c.origine, c.destination, c.depart))
+        retours = meilleurs.get((c.destination, c.origine, c.retour))
+        if allers is None or retours is None:
+            continue
+        for _, a in allers.iterrows():
+            for _, r in retours.iterrows():
+                lignes.append({
+                    "route": f"{c.origine} → {c.destination}", "origine": c.origine, "destination": c.destination,
+                    "depart": c.depart, "retour": c.retour, "nuits": c.nuits,
+                    "prix": a["prix"] + r["prix"],
+                    "bagages": a["bagages"] + r["bagages"] if pd.notna(a["bagages"]) and pd.notna(r["bagages"]) else None,
+                    **{f"aller_{k}": a[k] for k in CHAMPS_VOL},
+                    **{f"retour_{k}": r[k] for k in CHAMPS_VOL},
+                    "lien": a["lien"], "lien_retour": r["lien"], "type": "2 allers simples",
+                })
+    return pd.DataFrame(lignes)
+
+
+def ecart_habituel(prix_hors_bagages: float, typique, bas, haut) -> tuple[str, str] | None:
+    """Position du prix par rapport au prix habituel de Google pour ces dates (même requête, hors bagages).
+
+    Renvoie (niveau, texte), niveau valant "bas", "habituel" ou "eleve" ; None si Google ne donne pas de tendance.
+    """
+    if pd.isna(typique) or not typique:
+        return None
+    def m(v):
+        return f"{v:,.0f}".replace(",", " ")
+
+    ecart = (prix_hors_bagages - typique) / typique
+    niveau = "bas" if prix_hors_bagages < bas else "eleve" if prix_hors_bagages > haut else "habituel"
+    position = "Au prix habituel" if round(ecart, 2) == 0 else f"{abs(ecart):.0%} {'sous' if ecart < 0 else 'au-dessus'} du prix habituel"
+    return niveau, f"{position} ({m(typique)} $, fourchette {m(bas)}–{m(haut)} $)"
 
 
 def choisir_candidats(allers: pd.DataFrame, nombre: int) -> pd.DataFrame:
