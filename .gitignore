@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.bak
+*.tmp
+
+# Données de travail locales (recherches des clients, historique des prix)
+**/data/recherches.json
+**/data/*.corrompu-*.json
+**/data/historique.sqlite

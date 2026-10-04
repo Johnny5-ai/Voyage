@@ -1,0 +1,9 @@
+[server]
+address = "localhost"
+port = 8502
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
