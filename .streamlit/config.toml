@@ -1,5 +1,2 @@
-[server]
-address = "localhost"
-
 [browser]
 gatherUsageStats = false
