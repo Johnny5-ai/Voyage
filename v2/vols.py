@@ -245,9 +245,13 @@ def chercher(c: Combo, cr: Criteres, sans_cache: bool = False, aller=()) -> list
     lien = f"{URL}/search?tfs={t}&hl=fr&curr={cr.devise}"
     for o in options:
         o["lien"] = lien
-        # Aller simple : lien direct vers la page de réservation du vol
-        if not c.retour and o["segments"]:
-            o["lien"] = f"{URL_RESERVATION}?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
+        if o["segments"] and not aller:
+            if c.retour:
+                # Aller-retour : page Google avec ce vol aller déjà choisi, qui propose les retours
+                o["lien"] = f"{URL}/search?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
+            else:
+                # Aller simple : page de réservation du vol
+                o["lien"] = f"{URL_RESERVATION}?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
     _cache[t] = (time.time(), options)
     return options
 

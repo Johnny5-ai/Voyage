@@ -40,8 +40,8 @@
     "BKK",
     "LIM"
   ],
-  "nuits": 7,
-  "debut_jours": 21,
-  "horizon_jours": 150,
+  "nuits": 10,
+  "debut_jours": 60,
+  "horizon_jours": 80,
   "pas_jours": 10
 }

@@ -120,10 +120,13 @@ else:
             "Prix habituel ($)": st.column_config.NumberColumn(format="%d $"),
             "Plus bas de mes balayages ($)": st.column_config.NumberColumn(
                 format="%d $", help="Prix le plus bas relevé pour cette route et cette durée lors des balayages précédents"),
-            "Lien": st.column_config.LinkColumn("Lien", display_text="Voir sur Google Flights"),
+            "Lien": st.column_config.LinkColumn("Lien", display_text="Choisir le retour",
+                                                help="Ouvre Google Flights avec ce vol aller déjà sélectionné"),
         },
     )
-    st.caption("Pour en faire une offre client, ouvre « Recherche client » avec la destination et une plage autour de la date : "
+    st.caption("Le lien ouvre Google Flights avec le vol aller trouvé déjà sélectionné : il reste à choisir le retour. "
+               "Les liens d'un ancien balayage peuvent mener à « itinéraire plus disponible ». "
+               "Pour en faire une offre client, ouvre « Recherche client » avec la destination et une plage autour de la date : "
                "elle donnera les horaires, les bagages et le prix exact pour tout le groupe.")
 
 with st.expander("Planifier un balayage automatique chaque jour"):

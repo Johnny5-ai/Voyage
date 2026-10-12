@@ -108,6 +108,7 @@ def charger():
         simples=en_tableau(s.get("simples", [])),
         echecs={etape: tuple(e) for etape, e in s["echecs"].items()}, criteres_recherche=criteres,
         reference=(s["meilleur_prix"], s["date"], criteres_prix(criteres)), nom=st.session_state.choix,
+        date_resultats=datetime.strptime(s["date"], "%Y-%m-%d %H:%M"),
     )
 
 
@@ -239,6 +240,7 @@ if lancer:
             lambda c, o: {"origine": c.origine, "destination": c.destination, "depart": c.depart, **o})
         ss.simples = pd.DataFrame(lignes3)
     ss.criteres_recherche = {k: ss[k] for k in DEFAUTS}
+    ss.date_resultats = datetime.now()
 
 if "allers" not in ss:
     st.info("Remplis la demande du client à gauche, puis lance la recherche.")
@@ -312,6 +314,11 @@ if reference and reference[2] != criteres_prix(crit):
 frais_inconnus = nb_bagages and not its.empty and its["bagages"].isna().any()
 
 with zone_cartes:
+    anciennete = datetime.now() - ss.get("date_resultats", datetime.now())
+    if anciennete.days >= 1:
+        st.warning(f"Résultats du {ss.date_resultats:%Y-%m-%d %H:%M} (il y a {anciennete.days} jour(s)) : certains vols ne sont "
+                   "peut-être plus vendus, et leur lien mènera à « itinéraire plus disponible ». Relance la recherche "
+                   "pour des prix et des liens à jour.", icon=":material/history:")
     if its.empty:
         st.warning("Aucun itinéraire complet n'a pu être analysé (vols retour indisponibles, filtrés ou recherches échouées). "
                    "Les vols aller de l'étape 1 restent consultables plus bas.")
@@ -463,6 +470,7 @@ with st.expander("Tous les vols aller (étape 1)"):
         "Trajet aller": vue.apply(trajet, axis=1),
         "Lien": vue["lien"],
     }), hide_index=True, width="stretch", height=400, placeholder="—", column_config={
-        "Lien": st.column_config.LinkColumn("Lien", display_text="Voir"),
+        "Lien": st.column_config.LinkColumn("Lien", display_text="Choisir le retour",
+                                            help="Ouvre Google Flights avec ce vol aller déjà sélectionné"),
         "Prix à partir de ($)": st.column_config.NumberColumn(format="%d $"),
     })
