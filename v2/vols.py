@@ -135,6 +135,18 @@ def tfs(c: Combo, cr: Criteres, aller=(), retour=()) -> str:
     return base64.b64encode(info.SerializeToString()).decode()
 
 
+def lien_reservation(c: Combo, cr: Criteres, aller, retour=()) -> str:
+    # La page de réservation exige le format complet des liens Google, sinon elle renvoie une page générique :
+    # en-tête (champs 1 = 28, 2 = 2, 14 = 1) et aéroports typés (champ 1 = 1)
+    info = Info.FromString(base64.b64decode(tfs(c, cr, aller, retour)))
+    for fd in info.data:
+        fd.from_airport.MergeFromString(b"\x08\x01")
+        fd.to_airport.MergeFromString(b"\x08\x01")
+    info.MergeFromString(b"\x08\x1c\x10\x02\x70\x01")
+    t = base64.b64encode(info.SerializeToString()).decode()
+    return f"{URL_RESERVATION}?tfs={t}&hl=fr&curr={cr.devise}"
+
+
 def _heure(v) -> str:
     # Google omet les composantes nulles : [8] = 08:00, [None, 31] = 00:31
     p = [*(v or []), None, None]
@@ -251,7 +263,7 @@ def chercher(c: Combo, cr: Criteres, sans_cache: bool = False, aller=()) -> list
                 o["lien"] = f"{URL}/search?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
             else:
                 # Aller simple : page de réservation du vol
-                o["lien"] = f"{URL_RESERVATION}?tfs={tfs(c, cr, o['segments'])}&hl=fr&curr={cr.devise}"
+                o["lien"] = lien_reservation(c, cr, o["segments"])
     _cache[t] = (time.time(), options)
     return options
 
@@ -281,7 +293,7 @@ def chercher_retours(c: Combo, cr: Criteres, aller: dict, sans_cache: bool = Fal
     for r in retours:
         lien = r["lien"]
         if r["segments"]:
-            lien = f"{URL_RESERVATION}?tfs={tfs(c, cr, aller['segments'], r['segments'])}&hl=fr&curr={cr.devise}"
+            lien = lien_reservation(c, cr, aller["segments"], r["segments"])
         itineraires.append({
             "prix": r["prix"],
             # Frais mesurés à l'étape 1 sur ce vol aller ; Google les applique à tout l'itinéraire
